@@ -1,1 +1,473 @@
-hi
+
+<html>
+<head>
+<title > MAC PDU Decoder </title>
+<style>
+body{
+background-color: #9CAECB;
+}
+.semi-square {
+   -webkit-border-radius: 5px;
+   -moz-border-radius: 5px;
+   border-radius: 5px;
+}
+.styled-select {
+   background: url(http://i62.tinypic.com/15xvbd5.png) no-repeat 96% 0;
+   height: 29px;
+   overflow: hidden;
+   width: 240px;
+   color: black;
+}
+.styled-select select {
+   background: transparent;
+   color: black;
+   border: none;
+   font-size: 14px;
+   height: 29px;
+   padding: 5px; /* If you add too much padding here, the options won't show in IE */
+   width: 268px;
+     -webkit-appearance: none;
+	 padding: 2px 10px;
+}
+.styled-select option{
+background: #3b8ec2;
+
+}
+.blue    { background-color: #3b8ec2; }
+.blue select    { color: #fff; }
+</style>
+<script type="text/javascript">
+function macPDUDecoder() {
+ decodedContent = '';
+
+ var directionComp = document.getElementById("direction");
+ var direction = directionComp.options[directionComp.selectedIndex].text;
+
+ document.getElementById('contentMACPDU').innerHTML = '';
+
+ var inputPDU = document.getElementById("macPDU").value;
+ inputPDU = inputPDU.replace(/\s/g, "");
+
+ if (/[^a-f0-9]/gi.test(inputPDU)){
+  document.getElementById('contentMACPDU').innerHTML = 'Input must be in HexaDecimal...';
+  return;
+ }
+ else if (!(direction == "Uplink" || direction == "Downlink")){
+  document.getElementById('contentMACPDU').innerHTML = 'Select Direction...Uplink or Downlink';
+  return;
+ }
+
+ else if (inputPDU.length < 2){
+  document.getElementById('contentMACPDU').innerHTML = 'PDU size should be at least one Byte';
+  return;
+ }
+
+  MacPDU = [];
+ var j = 0;
+
+ for (var i = 0; i < inputPDU.length ; i += 2){
+  MacPDU[j++] = inputPDU.substring(i,i+2);
+ }
+
+ decodedContent = "Input MAC PDU: ";
+ for (var i = 0; i < MacPDU.length; i++){
+  decodedContent += MacPDU[i]+" ";
+ }
+
+ if (inputPDU.length % 2 != 0){
+  document.getElementById('contentMACPDU').innerHTML = decodedContent+'<br>'+'Incomplete information...half Bytes can not be processed';
+  return;
+ }
+
+  decodedContent += '<br><br>===============================================================<br>Decoded MAC PDU<br>===============================================================<br>';
+
+  var macSubheaderlengths = [];
+ var i = 0;
+
+ for (var k = 0; k < MacPDU.length; k++){
+  var binString1 = hex2bin(MacPDU[i]).split("");
+  var LCid = parseInt(hex2bin (MacPDU[i]).substring(3,8), 2);
+  
+  var LCtype = getMACCEtype(LCid, direction);
+
+  if (binString1 [2] == 1){
+	
+   if (/Logical Channel Identity/.test(LCtype) || /CCCH/.test(LCtype)){
+	   
+    var binString2 = hex2bin(MacPDU[i+1]).split ("");
+    if (binString2[0] == 1){
+     macSubheaderlengths.push(3);
+     i += 3;
+     
+    }
+    else{
+    	
+     macSubheaderlengths.push(2);
+     i += 2;
+    }
+   }
+   else if(/RESERVED/.test(LCtype))
+	{  
+		macSubheaderlengths.push(1);
+		i += 1;
+	}
+   else if (/MAC CE/.test(LCtype)){
+	
+    macSubheaderlengths.push(1);
+    i += 1;
+   }
+   else if (/Padding/.test(LCtype)){
+	   
+    macSubheaderlengths.push(1);
+    i += 1;
+   }
+  }
+  else{
+	
+   macSubheaderlengths.push(1);
+   break;
+  }
+ }
+ currentDataPointer = 0;
+ for (var i = 0; i < macSubheaderlengths.length; i++){
+	  currentDataPointer += macSubheaderlengths[i];
+  
+ }
+
+ var currentSubheaderNumber = 0;
+ var i = 0;
+
+ for (var k = 0; k < MacPDU.length; k++){
+  currentSubheaderNumber++;
+  var binString1 = hex2bin(MacPDU[i]).split("");
+  var LCid = parseInt(hex2bin (MacPDU[i]).substring(3,8), 2);
+  var LCtype = getMACCEtype(LCid, direction);
+  decodedContent = decodedContent + '<br>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------<br>';
+  var SDU_macCE_length;
+  decodedContent = decodedContent + "MAC Subheader - " + currentSubheaderNumber + ': ' + LCtype + "("+LCid+")";
+  decodedContent = decodedContent + '<br>-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------<br>';
+  var SDU_macCE_length;
+    if (binString1 [2] == 1){
+   if (/Logical Channel Identity/.test(LCtype)){
+    
+    var Fbit = 0x80&parseInt(MacPDU[i+1],16);
+    
+    if (Fbit == 128){
+     SDU_macCE_length = 0x7FFF&parseInt(MacPDU[i+1].concat(MacPDU[i+2]),16);
+     i += 3;
+    }
+    else {
+     SDU_macCE_length = parseInt(MacPDU[i+1],16);
+     i += 2;
+    }
+    decodedContent+="Mac SDU length : "+SDU_macCE_length+" bytes";
+    decodedContent += '<br>';
+    decodedContent += "MAC SDU: ";
+    for (var j = currentDataPointer; j < (currentDataPointer+SDU_macCE_length); j++){
+     if(MacPDU[j]!=undefined)
+     {
+     decodedContent = decodedContent+MacPDU[j]+" ";
+     }
+     else{
+     decodedContent +="...."
+     break;
+     }
+    }
+   }
+   else if (/MAC CE/.test(LCtype)){
+    i += 1;
+    SDU_macCE_length = getMACCEdetails (LCtype, currentDataPointer, direction);
+   }
+   else if (/Padding/.test(LCtype)){
+    i += 1;
+    SDU_macCE_length = 0;
+    decodedContent += "One byte Padding<br>";
+   }
+   else if (/CCCH/.test(LCtype))
+	{   
+	   SDU_macCE_length = parseInt(MacPDU[i+1],16);
+		  decodedContent+="Mac SDU length : "+SDU_macCE_length+" bytes";
+		  decodedContent += '<br>';
+		  decodedContent += "MAC CCCH SDU:";
+		  
+		for (var j = currentDataPointer; j < (currentDataPointer+SDU_macCE_length); j++){
+		     decodedContent = decodedContent+MacPDU[j]+" ";
+		    }
+	   var binString2 = hex2bin(MacPDU[i+1]).split ("");
+	    if (binString2[0] == 1){
+	     i += 3;
+   
+	    }
+	    else{
+	    	
+	     macSubheaderlengths.push(2);
+	     i += 2;
+	   
+	    }
+	    
+	}
+	else if(/RESERVED/.test(LCtype))
+	{  i += 1;
+	}
+   currentDataPointer += SDU_macCE_length;
+  }
+  else {
+   if (/Logical Channel Identity/.test(LCtype)){
+    decodedContent += "MAC SDU: ";
+    
+    for (var j = currentDataPointer; j < MacPDU.length; j++){
+       if(MacPDU[j]!=undefined)
+     {
+     decodedContent = decodedContent+MacPDU[j]+" ";
+     }
+     else{
+     decodedContent +="...."
+     }
+  
+    }
+   }
+   else if (/Padding/.test(LCtype)){
+    
+    for (var j = currentDataPointer; j < MacPDU.length; j++){
+        
+        decodedContent+=MacPDU[j]+" ";
+   }}
+   else if (/MAC CE/.test(LCtype)){
+    SDU_macCE_length = getMACCEdetails (LCtype, currentDataPointer, direction);
+   }
+   decodedContent += '<br><br>';
+   break;
+  }
+  decodedContent += '<br><br>';
+ }
+ document.getElementById('contentMACPDU').innerHTML = decodedContent;
+}
+
+function getMACCEdetails (LCtype, currentDataPointer, direction){
+ var macCEbinString = hex2bin(MacPDU[currentDataPointer]).split("");
+ if (/ctivation/.test(LCtype)){
+  for(var i = 7; i > 0; i--){
+   var sCellIndex = 8-i;
+   if (macCEbinString[i-1] == 1){
+    decodedContent = decodedContent + "sCell Index - " + sCellIndex + ": Activate<br>";
+   }
+   else{
+    decodedContent = decodedContent + "sCell Index - " + sCellIndex + ": Deactivate<br>";
+   }
+  }
+  return 1;
+ }
+ else if (/Contention/.test(LCtype)){
+  decodedContent += "UE Contention Resolution Identity: ";
+  for (var i = currentDataPointer; i < (currentDataPointer+6); i++){
+   decodedContent = decodedContent + MacPDU[i] + " ";
+  }
+  decodedContent += '<br>';
+  return 6;
+ }
+ else if (/Timing Advance/.test(LCtype)){
+  var TAcommand = parseInt(hex2bin (MacPDU[currentDataPointer]).substring(2,8), 2);
+  var TAGid = parseInt(hex2bin (MacPDU[currentDataPointer]).substring(0,2), 2);
+  decodedContent = decodedContent + "Until Release-10, Timing Advance Value: " + TAcommand;
+  decodedContent = decodedContent + "<br>From Release-11, TAG Identity: "+ TAGid + "&emsp;&emsp;   Timing Advance Value: " + TAcommand + "<br>";
+  return 1;
+ }
+ else if (/DRX/.test(LCtype)){
+  decodedContent += "DRX Command<br>";
+  return 0;
+ }
+ else if (/Power Headroom Report/.test(LCtype)){
+  var PH_command = parseInt(hex2bin (MacPDU[currentDataPointer]).substring(2,8), 2);
+  var phLow = PH_command - 23;
+  var phHigh = PH_command - 22;
+  decodedContent = decodedContent + "Power Headroom Level: " + PH_command + "<br>";
+  if (PH_command == 63){
+   decodedContent += "Power Headroom measured value in dB >= 40<br>"
+  }
+  else{
+   decodedContent = decodedContent + "Power Headroom measured value in dB: " + phLow + " <= PH < " + phHigh + "<br>";
+  }
+  return 1;
+ }
+ else if (/C-RNTI/.test(LCtype)){
+  var cRNTI = parseInt(MacPDU[currentDataPointer] + MacPDU[currentDataPointer+1],16);
+  decodedContent = decodedContent + "C-RNTI value: " + cRNTI + "<br>";
+  return 2;
+ }
+ else if (/Truncated BSR/.test(LCtype)|/Short BSR/.test(LCtype)){
+  var bufferSizeLevels_36321_Table_6_1_3_1_1 = ["Buffer Size = 0", "0 < Buffer Size <= 10", "10 < Buffer Size <= 12", "12 < Buffer Size <= 14", "14 < Buffer Size <= 17", "17 < Buffer Size <= 19", "19 < Buffer Size <= 22", "22 < Buffer Size <= 26", "26 < Buffer Size <= 31", "31 < Buffer Size <= 36", "36 < Buffer Size <= 42", "42 < Buffer Size <= 49", "49 < Buffer Size <= 57", "57 < Buffer Size <= 67", "67 < Buffer Size <= 78", "78 < Buffer Size <= 91", "91 < Buffer Size <= 107", "107 < Buffer Size <= 125", "125 < Buffer Size <= 146", "146 < Buffer Size <= 171", "171 < Buffer Size <= 200", "200 < Buffer Size <= 234", "234 < Buffer Size <= 274", "274 < Buffer Size <= 321", "321 < Buffer Size <= 376", "376 < Buffer Size <= 440", "440 < Buffer Size <= 515", "515 < Buffer Size <= 603", "603 < Buffer Size <= 706", "706 < Buffer Size <= 826", "826 < Buffer Size <= 967", "967 < Buffer Size <=1132", "1132 < Buffer Size <= 1326", "1326 < Buffer Size <= 1552", "1552 < Buffer Size <= 1817", "1817 < Buffer Size <= 2127", "2127 < Buffer Size <= 2490", "2490 < Buffer Size <= 2915", "2915 < Buffer Size <= 3413", "3413 < Buffer Size <= 3995", "3995 < Buffer Size <= 4677", "4677 < Buffer Size <= 5476", "5476 < Buffer Size <= 6411", "6411 < Buffer Size <= 7505", "7505 < Buffer Size <= 8787", "8787 < Buffer Size <= 10287", "10287 < Buffer Size <= 12043", "12043 < Buffer Size <= 14099", "14099 < Buffer Size <= 16507", "16507 < Buffer Size <= 19325", "19325 < Buffer Size <= 22624", "22624 < Buffer Size <= 26487", "26487 < Buffer Size <= 31009", "31009 < Buffer Size <= 36304", "36304 < Buffer Size <= 42502", "42502 < Buffer Size <= 49759", "49759 < Buffer Size <= 58255", "58255 < Buffer Size <= 68201", "68201 < Buffer Size <= 79846", "79846 < Buffer Size <= 93479", "93479 < Buffer Size <= 109439", "109439 < Buffer Size <= 128125", "128125 < Buffer Size <= 150000", "Buffer Size > 150000"];
+  var bufferSizeLevels_36321_Table_6_1_3_1_2 = ["Buffer Size = 0", "0 < Buffer Size <= 10", "10 < Buffer Size <= 13", "13 < Buffer Size <= 16", "16 < Buffer Size <= 19", "19 < Buffer Size <= 23", "23 < Buffer Size <= 29", "29 < Buffer Size <= 35", "35 < Buffer Size <= 43", "43 < Buffer Size <= 53", "53 < Buffer Size <= 65", "65 < Buffer Size <= 80", "80 < Buffer Size <= 98", "98 < Buffer Size <= 120", "120 < Buffer Size <= 147", "147 < Buffer Size <= 181", "181 < Buffer Size <= 223", "223 < Buffer Size <= 274", "274 < Buffer Size <= 337", "337 < Buffer Size <= 414", "414 < Buffer Size <= 509", "509 < Buffer Size <= 625", "625 < Buffer Size <= 769", "769 < Buffer Size <= 945", "945 < Buffer Size <= 1162", "1162 < Buffer Size <= 1429", "1429 < Buffer Size <= 1757", "1757 < Buffer Size <= 2161", "2161 < Buffer Size <= 2657", "2657 < Buffer Size <= 3267", "3267 < Buffer Size <= 4017", "4017 < Buffer Size <=4940", "4940 < Buffer Size <= 6074", "6074 < Buffer Size <= 7469", "7469 < Buffer Size <= 9185", "9185 < Buffer Size <= 11294", "11294 < Buffer Size <= 13888", "13888 < Buffer Size <= 17077", "17077 < Buffer Size <= 20999", "20999 < Buffer Size <= 25822", "25822 < Buffer Size <= 31752", "31752 < Buffer Size <= 39045", "39045 < Buffer Size <= 48012", "48012 < Buffer Size <= 59039", "59039 < Buffer Size <= 72598", "72598 < Buffer Size <= 89272", "89272 < Buffer Size <= 109774", "109774 < Buffer Size <= 134986", "134986 < Buffer Size <= 165989", "165989 < Buffer Size <= 204111", "204111 < Buffer Size <= 250990", "250990 < Buffer Size <= 308634", "308634 < Buffer Size <= 379519", "379519 < Buffer Size <= 466683", "466683 < Buffer Size <= 573866", "573866 < Buffer Size <= 705666", "705666 < Buffer Size <= 867737", "867737 < Buffer Size <= 1067031", "1067031 < Buffer Size <= 1312097", "1312097 < Buffer Size <= 1613447", "1613447 < Buffer Size <= 1984009", "1984009 < Buffer Size <= 2439678", "2439678 < Buffer Size <= 3000000", "Buffer Size > 3000000"];
+  var lcgID = parseInt(hex2bin (MacPDU[currentDataPointer]).substring(0,2), 2);
+  var bufferSize = parseInt(hex2bin (MacPDU[currentDataPointer]).substring(2,8), 2);
+
+  decodedContent = decodedContent + "Logical Channel Group ID: " + lcgID + "<br>" + "BSR Index: " + bufferSize + "<br>";
+  decodedContent = decodedContent + "If extendedBSR-Sizes is not configured, then  " + bufferSizeLevels_36321_Table_6_1_3_1_1[bufferSize] + "<br>";
+  decodedContent = decodedContent + "If extendedBSR-Sizes is configured, then  " + bufferSizeLevels_36321_Table_6_1_3_1_2[bufferSize] + "<br>";
+  return 1;
+ }
+
+ else if (/Long BSR/.test(LCtype)){
+  var bufferSizeLevels_36321_Table_6_1_3_1_1 = ["Buffer Size = 0", "0 < Buffer Size <= 10", "10 < Buffer Size <= 12", "12 < Buffer Size <= 14", "14 < Buffer Size <= 17", "17 < Buffer Size <= 19", "19 < Buffer Size <= 22", "22 < Buffer Size <= 26", "26 < Buffer Size <= 31", "31 < Buffer Size <= 36", "36 < Buffer Size <= 42", "42 < Buffer Size <= 49", "49 < Buffer Size <= 57", "57 < Buffer Size <= 67", "67 < Buffer Size <= 78", "78 < Buffer Size <= 91", "91 < Buffer Size <= 107", "107 < Buffer Size <= 125", "125 < Buffer Size <= 146", "146 < Buffer Size <= 171", "171 < Buffer Size <= 200", "200 < Buffer Size <= 234", "234 < Buffer Size <= 274", "274 < Buffer Size <= 321", "321 < Buffer Size <= 376", "376 < Buffer Size <= 440", "440 < Buffer Size <= 515", "515 < Buffer Size <= 603", "603 < Buffer Size <= 706", "706 < Buffer Size <= 826", "826 < Buffer Size <= 967", "967 < Buffer Size <=1132", "1132 < Buffer Size <= 1326", "1326 < Buffer Size <= 1552", "1552 < Buffer Size <= 1817", "1817 < Buffer Size <= 2127", "2127 < Buffer Size <= 2490", "2490 < Buffer Size <= 2915", "2915 < Buffer Size <= 3413", "3413 < Buffer Size <= 3995", "3995 < Buffer Size <= 4677", "4677 < Buffer Size <= 5476", "5476 < Buffer Size <= 6411", "6411 < Buffer Size <= 7505", "7505 < Buffer Size <= 8787", "8787 < Buffer Size <= 10287", "10287 < Buffer Size <= 12043", "12043 < Buffer Size <= 14099", "14099 < Buffer Size <= 16507", "16507 < Buffer Size <= 19325", "19325 < Buffer Size <= 22624", "22624 < Buffer Size <= 26487", "26487 < Buffer Size <= 31009", "31009 < Buffer Size <= 36304", "36304 < Buffer Size <= 42502", "42502 < Buffer Size <= 49759", "49759 < Buffer Size <= 58255", "58255 < Buffer Size <= 68201", "68201 < Buffer Size <= 79846", "79846 < Buffer Size <= 93479", "93479 < Buffer Size <= 109439", "109439 < Buffer Size <= 128125", "128125 < Buffer Size <= 150000", "Buffer Size > 150000"];
+  var bufferSizeLevels_36321_Table_6_1_3_1_2 = ["Buffer Size = 0", "0 < Buffer Size <= 10", "10 < Buffer Size <= 13", "13 < Buffer Size <= 16", "16 < Buffer Size <= 19", "19 < Buffer Size <= 23", "23 < Buffer Size <= 29", "29 < Buffer Size <= 35", "35 < Buffer Size <= 43", "43 < Buffer Size <= 53", "53 < Buffer Size <= 65", "65 < Buffer Size <= 80", "80 < Buffer Size <= 98", "98 < Buffer Size <= 120", "120 < Buffer Size <= 147", "147 < Buffer Size <= 181", "181 < Buffer Size <= 223", "223 < Buffer Size <= 274", "274 < Buffer Size <= 337", "337 < Buffer Size <= 414", "414 < Buffer Size <= 509", "509 < Buffer Size <= 625", "625 < Buffer Size <= 769", "769 < Buffer Size <= 945", "945 < Buffer Size <= 1162", "1162 < Buffer Size <= 1429", "1429 < Buffer Size <= 1757", "1757 < Buffer Size <= 2161", "2161 < Buffer Size <= 2657", "2657 < Buffer Size <= 3267", "3267 < Buffer Size <= 4017", "4017 < Buffer Size <=4940", "4940 < Buffer Size <= 6074", "6074 < Buffer Size <= 7469", "7469 < Buffer Size <= 9185", "9185 < Buffer Size <= 11294", "11294 < Buffer Size <= 13888", "13888 < Buffer Size <= 17077", "17077 < Buffer Size <= 20999", "20999 < Buffer Size <= 25822", "25822 < Buffer Size <= 31752", "31752 < Buffer Size <= 39045", "39045 < Buffer Size <= 48012", "48012 < Buffer Size <= 59039", "59039 < Buffer Size <= 72598", "72598 < Buffer Size <= 89272", "89272 < Buffer Size <= 109774", "109774 < Buffer Size <= 134986", "134986 < Buffer Size <= 165989", "165989 < Buffer Size <= 204111", "204111 < Buffer Size <= 250990", "250990 < Buffer Size <= 308634", "308634 < Buffer Size <= 379519", "379519 < Buffer Size <= 466683", "466683 < Buffer Size <= 573866", "573866 < Buffer Size <= 705666", "705666 < Buffer Size <= 867737", "867737 < Buffer Size <= 1067031", "1067031 < Buffer Size <= 1312097", "1312097 < Buffer Size <= 1613447", "1613447 < Buffer Size <= 1984009", "1984009 < Buffer Size <= 2439678", "2439678 < Buffer Size <= 3000000", "Buffer Size > 3000000"];
+  var bufferSize = [];
+  bufferSize.push (parseInt(hex2bin (MacPDU[currentDataPointer]).substring(0,6), 2),
+       parseInt(hex2bin (MacPDU[currentDataPointer]).substring(6,8) + hex2bin (MacPDU[currentDataPointer+1]).substring(0,4), 2),
+       parseInt(hex2bin (MacPDU[currentDataPointer+1]).substring(4,8) + hex2bin (MacPDU[currentDataPointer+2]).substring(0,2), 2),
+       parseInt(hex2bin (MacPDU[currentDataPointer+2]).substring(2,8), 2));
+
+  for (var i = 0; i < bufferSize.length; i++){
+   decodedContent =  decodedContent + "<br>Logical Channel Group - " + i + "<br>-----------------------------------------<br>BSR Index = " + bufferSize[i] + "<br>";
+   decodedContent = decodedContent + "If extendedBSR-Sizes is not configured:   " + bufferSizeLevels_36321_Table_6_1_3_1_1[bufferSize[i]] + "<br>";
+   decodedContent = decodedContent + "If extendedBSR-Sizes is configured:       " + bufferSizeLevels_36321_Table_6_1_3_1_2[bufferSize[i]] + "<br>";
+  }
+  return 3;
+ }
+}
+
+function hex2bin (hexValue){
+ logicalChannelID = parseInt(hexValue, 16).toString(2);
+ while (logicalChannelID.length < 8){
+  logicalChannelID = "0" + logicalChannelID;
+ }
+ return logicalChannelID;
+}
+
+function getMACCEtype(LCID, direction){
+ if (direction == "Downlink"){
+
+  if (LCID < 27 && LCID > 12){
+   return "RESERVED";
+  }
+  else if (LCID == 27){
+   return "MAC CE: Activation/Deactivation";
+  }
+  else if (LCID == 28){
+   return "MAC CE: UE Contention Resolution Identity";
+  }
+  else if (LCID == 29){
+   return "MAC CE: Timing Advance Command";
+  }
+  else if (LCID == 30){
+   return "MAC CE: DRX Command";
+  }
+ }
+ else if (direction == "Uplink"){
+  if (LCID < 26 && LCID > 12){
+   return "RESERVED";
+  }
+  else if (LCID == 26){
+   return "MAC CE: Power Headroom Report";
+  }
+  else if (LCID == 27){
+   return "MAC CE: C-RNTI";
+  }
+  else if (LCID == 28){
+   return "MAC CE: Truncated BSR";
+  }
+  else if (LCID == 29){
+   return "MAC CE: Short BSR";
+  }
+  else if (LCID == 30){
+   return "MAC CE: Long BSR";
+  }
+ }
+
+ if (LCID == 0){
+  return "CCCH";
+ }
+ else if (LCID > 0 && LCID < 11){
+  return ("Logical Channel Identity : ");
+ }
+ else if (LCID == 31){
+  return "Padding";
+ }
+}
+
+ </script>
+  <style>
+input[type=text], select {
+    width: 277%;
+    padding: 8px 20px;
+    margin: 8px 0%;
+    display: inline-block;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+	font: 16px arial
+}
+
+input[type=submit] {
+    width: 100%;
+    background-color: #4CAF50;
+    color: white;
+    padding: 10px 10%;
+    margin: 8px 0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+	font: 16px arial
+}
+
+input[type=submit]:hover {
+    background-color: #45a049;
+}
+
+#forms {
+    border-radius: 5px;
+    background-color: #f2f2f2;
+    padding: 15px 10%;
+	font: 17px arial;
+	margin: 0 10%;
+}
+h3{
+padding:0px 10% ;
+font: 20px arial;
+}
+#contentMACPDU{
+background-color: #F2F9E0;
+ height: 400px;
+ border-radius: 5px;
+ overflow: scroll;
+ text-align: left;
+ width: 75.5%;
+ margin:10px 10%;
+ padding : 30px ;
+ font: 16px arial;
+}
+table{
+border:1px;
+}
+</style>
+ <body>
+
+
+<h3><br>MAC PDU DECODER:</h3>
+
+<div id ="forms">
+  <form onsubmit="return false">
+    <table>
+    		<tr>
+    		<td><label >MAC PDU in HEX :</label></td>
+    		<td><input type="text" id="macPDU" value="" placeholder="Mac Pdu ">
+			</td></tr>
+			<tr>
+			<td><label >UL or DL :</label></td>
+			<td><select  id="direction" name="direction">
+				    <option>select</option>
+					<option>Uplink</option>
+				    <option>Downlink</option>
+		 		</select>
+			</td>
+			</tr>
+	</table>
+    <input type="submit" value="Decode" onclick="macPDUDecoder()">
+  </form>
+</div>
+
+<div id="contentMACPDU">
+</div>
+</form>
+
+ </body>
+ </head>
+ </html>
