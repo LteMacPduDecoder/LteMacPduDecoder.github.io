@@ -1,4 +1,5 @@
 
+
 <html>
 <head>
 <title > MAC PDU Decoder </title>
@@ -169,7 +170,7 @@ function macPDUDecoder() {
      decodedContent = decodedContent+MacPDU[j]+" ";
      }
      else{
-     decodedContent +="...."
+     decodedContent +="  ...."
      break;
      }
     }
@@ -191,7 +192,15 @@ function macPDUDecoder() {
 		  decodedContent += "MAC CCCH SDU:";
 		  
 		for (var j = currentDataPointer; j < (currentDataPointer+SDU_macCE_length); j++){
-		     decodedContent = decodedContent+MacPDU[j]+" ";
+		 if(MacPDU[j]!=undefined)
+     {
+     decodedContent = decodedContent+MacPDU[j]+" ";
+     }
+     else{
+     decodedContent +="  ...."
+     break;
+     }
+		    
 		    }
 	   var binString2 = hex2bin(MacPDU[i+1]).split ("");
 	    if (binString2[0] == 1){
@@ -221,7 +230,8 @@ function macPDUDecoder() {
      decodedContent = decodedContent+MacPDU[j]+" ";
      }
      else{
-     decodedContent +="...."
+     decodedContent +="  ...."
+     break;
      }
   
     }
